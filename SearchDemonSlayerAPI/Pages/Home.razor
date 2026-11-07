@@ -1,0 +1,116 @@
+@page "/"
+@inject SearchDemonSlayerAPI.Services.CharacterService CharacterService
+@implements IDisposable
+
+<PageTitle>Personagens | Demon Slayer</PageTitle>
+
+<section class="hero">
+    <p class="eyebrow">CATÁLOGO DE PERSONAGENS</p>
+    <h1>Universo Demon Slayer</h1>
+    <p>Conheça os personagens de Kimetsu no Yaiba. Consulte suas informações e encontre seus favoritos.</p>
+</section>
+
+<section class="toolbar" aria-label="Busca e navegação">
+    <label for="search">Buscar personagem</label>
+    <input id="search" type="search" placeholder="Digite um nome, raça ou frase..." @bind="search" @bind:event="oninput" />
+</section>
+
+@if (loading)
+{
+    <p class="status" role="status">Carregando personagens...</p>
+}
+else if (error is not null)
+{
+    <div class="status error" role="alert">
+        <p>@error</p>
+        <button @onclick="LoadAsync">Tentar novamente</button>
+    </div>
+}
+else
+{
+    <p class="result-count">@Filtered.Count personagem(ns) encontrado(s) na página @page.</p>
+    @if (Filtered.Count == 0)
+    {
+        <p class="status">Nenhum personagem corresponde à sua busca nesta página.</p>
+    }
+    <div class="characters">
+        @foreach (var character in Filtered)
+        {
+            <article class="character">
+                @if (!string.IsNullOrWhiteSpace(character.Image))
+                {
+                    <img src="@character.Image" alt="Imagem de @character.Name" loading="lazy" referrerpolicy="no-referrer" />
+                }
+                else
+                {
+                    <div class="image-placeholder">Imagem indisponível</div>
+                }
+                <div class="character-body">
+                    <h2>@Fallback(character.Name)</h2>
+                    <dl>
+                        <div><dt>Idade</dt><dd>@Fallback(character.Age)</dd></div>
+                        <div><dt>Raça</dt><dd>@Fallback(character.Race)</dd></div>
+                    </dl>
+                    <p class="quote">“@Fallback(character.Quote)”</p>
+                </div>
+            </article>
+        }
+    </div>
+    <nav class="pagination" aria-label="Paginação">
+        <button disabled="@(page == 1)" @onclick="PreviousPage">Anterior</button>
+        <span>Página @page</span>
+        <button disabled="@(characters.Count == 0)" @onclick="NextPage">Próxima</button>
+    </nav>
+}
+
+@code {
+    private readonly CancellationTokenSource cancellation = new();
+    private IReadOnlyList<Character> characters = [];
+    private string search = "";
+    private string? error;
+    private bool loading = true;
+    private int page = 1;
+
+    private List<Character> Filtered => characters.Where(c =>
+        string.IsNullOrWhiteSpace(search) ||
+        c.Name.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+        c.Race.Contains(search, StringComparison.OrdinalIgnoreCase) ||
+        c.Quote.Contains(search, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    protected override async Task OnInitializedAsync() => await LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        loading = true;
+        error = null;
+        try
+        {
+            characters = await CharacterService.GetCharactersAsync(page, cancellation.Token);
+        }
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
+        catch (Exception)
+        {
+            error = "Não foi possível consultar a API. Verifique sua conexão e tente novamente.";
+            characters = [];
+        }
+        finally { loading = false; }
+    }
+
+    private async Task PreviousPage()
+    {
+        if (page <= 1) return;
+        page--;
+        search = "";
+        await LoadAsync();
+    }
+
+    private async Task NextPage()
+    {
+        page++;
+        search = "";
+        await LoadAsync();
+    }
+
+    private static string Fallback(string value) => string.IsNullOrWhiteSpace(value) ? "Não informado" : value;
+    public void Dispose() => cancellation.Cancel();
+}
